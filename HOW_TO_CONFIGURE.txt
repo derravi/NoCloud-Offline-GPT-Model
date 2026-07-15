@@ -1,0 +1,223 @@
+=========================================================
+ LOCAL CHATGPT — HOW TO CONFIGURE AND RUN (with Ollama)
+=========================================================
+
+This project is a fully offline, self-hosted chat app that looks and
+behaves like ChatGPT, but talks to your own local models through
+Ollama. Nothing is sent to the internet. Chat history is stored in a
+local SQLite database file on your machine.
+
+Project layout:
+  local-chatgpt/
+    backend/
+      main.py            -> FastAPI server (API + serves the frontend)
+      database.py         -> SQLite storage (history, conversations)
+      requirements.txt    -> Python dependencies
+      chat_history.db      -> created automatically on first run
+    frontend/
+      index.html, style.css, app.js  -> the ChatGPT-style UI
+    start.sh / start.bat  -> one-command launchers
+    HOW_TO_CONFIGURE.txt  -> this file
+
+
+---------------------------------------------------------
+1. INSTALL OLLAMA
+---------------------------------------------------------
+If you don't already have Ollama installed:
+
+  Windows / macOS : download from https://ollama.com/download
+  Linux           : curl -fsSL https://ollama.com/install.sh | sh
+
+Verify it works:
+  ollama --version
+
+Ollama runs a background server on:
+  http://localhost:11434
+This is what our Python backend talks to. Keep it running
+(it usually starts automatically, or run "ollama serve" manually).
+
+
+---------------------------------------------------------
+2. DOWNLOAD (PULL) SOME LOCAL MODELS
+---------------------------------------------------------
+Pull any models you want to use. Examples:
+
+  ollama pull llama3.1          (general purpose, 8B)
+  ollama pull llama3.1:70b      (bigger, needs more RAM/VRAM)
+  ollama pull mistral           (fast, 7B)
+  ollama pull qwen2.5           (strong at coding/reasoning)
+  ollama pull deepseek-r1       (reasoning model)
+  ollama pull gemma2            (Google's open model)
+  ollama pull codellama         (code-focused)
+
+Check what you have installed at any time with:
+  ollama list
+
+Every model you've pulled will automatically show up in the
+"select a model" dropdown at the top of the app — no code changes
+needed. Pull or remove models with Ollama and just refresh the page.
+
+
+---------------------------------------------------------
+3. INSTALL PYTHON REQUIREMENTS
+---------------------------------------------------------
+Requirements: Python 3.10+ installed and on your PATH.
+
+Option A — use the launcher script (recommended, handles everything):
+
+  macOS/Linux:
+      cd local-chatgpt
+      ./start.sh
+
+  Windows:
+      cd local-chatgpt
+      start.bat
+
+  These scripts create a virtual environment in backend/.venv,
+  install dependencies, and start the server automatically.
+  Just run them again any time you want to start the app.
+
+Option B — do it manually:
+
+  cd local-chatgpt/backend
+  python3 -m venv .venv
+  source .venv/bin/activate        (Windows: .venv\Scripts\activate)
+  pip install -r requirements.txt
+  uvicorn main:app --host 0.0.0.0 --port 8000
+
+
+---------------------------------------------------------
+4. OPEN THE APP
+---------------------------------------------------------
+Once the server is running, open your browser to:
+
+  http://localhost:8000
+
+You should see:
+ - A status dot in the sidebar turning teal/green = Ollama is reachable.
+ - A model dropdown in the top bar listing your pulled models.
+ - "New chat" to start a conversation, sidebar history of past chats.
+
+If the dot stays grey and says "ollama unreachable":
+ - Make sure "ollama serve" is running (or the Ollama desktop app is open).
+ - Confirm it's on the default port: curl http://localhost:11434
+ - See section 6 if Ollama runs on a different host/port.
+
+
+---------------------------------------------------------
+5. WHERE YOUR DATA LIVES
+---------------------------------------------------------
+All conversations and messages are stored locally in:
+
+  local-chatgpt/backend/chat_history.db
+
+This is a plain SQLite file — nothing leaves your machine. You can:
+ - Back it up by copying the file.
+ - Delete it to wipe all history (a fresh one is created automatically
+   next time you start the server).
+ - Open it with any SQLite browser (e.g. "DB Browser for SQLite") to
+   inspect or export your chats manually.
+
+
+---------------------------------------------------------
+6. CONFIGURATION OPTIONS (ENVIRONMENT VARIABLES)
+---------------------------------------------------------
+Set these before launching if you need non-default settings.
+
+  OLLAMA_HOST
+    Where the backend looks for Ollama. Default: http://localhost:11434
+    Use this if Ollama runs on another machine or a custom port, e.g.
+    a GPU server on your local network.
+
+      macOS/Linux:  export OLLAMA_HOST="http://192.168.1.50:11434"
+      Windows:      set OLLAMA_HOST=http://192.168.1.50:11434
+
+  DB_PATH
+    Full path to the SQLite database file. Default: backend/chat_history.db
+    Useful if you want history stored elsewhere (e.g. a synced folder).
+
+      macOS/Linux:  export DB_PATH="/path/to/my_chat_history.db"
+      Windows:      set DB_PATH=C:\path\to\my_chat_history.db
+
+Then run start.sh / start.bat (or uvicorn) as usual in that same shell.
+
+To change the port the app is served on, edit the last line of
+backend/main.py's launch command or run uvicorn directly, e.g.:
+
+  uvicorn main:app --host 0.0.0.0 --port 9000
+
+
+---------------------------------------------------------
+7. USING IT ON OTHER DEVICES ON YOUR NETWORK
+---------------------------------------------------------
+Because the server binds to 0.0.0.0, other devices on the same network
+(phone, tablet, another PC) can reach it at:
+
+  http://<your-computer's-local-IP>:8000
+
+Find your local IP with `ipconfig` (Windows) or `ifconfig` / `ip a`
+(macOS/Linux). This still never touches the internet — it's all
+traffic on your own LAN.
+
+
+---------------------------------------------------------
+8. CUSTOMIZING THE ASSISTANT (SYSTEM PROMPT)
+---------------------------------------------------------
+Each conversation can carry its own system prompt (persona,
+instructions, tone, etc.). By default new conversations use an empty
+system prompt. To set one, either:
+
+ - Extend the "New chat" flow in frontend/app.js to prompt for a
+   system prprompt and pass it in the POST /api/conversations body
+   as {"system_prompt": "..."}; or
+ - Call the API directly, e.g. with curl:
+
+     curl -X POST http://localhost:8000/api/conversations \
+       -H "Content-Type: application/json" \
+       -d '{"model": "llama3.1", "title": "Coding helper",
+            "system_prompt": "You are a terse senior Python engineer."}'
+
+
+---------------------------------------------------------
+9. TROUBLESHOOTING
+---------------------------------------------------------
+"ollama unreachable" in the sidebar
+  -> Ollama isn't running, or is on a different host/port. See section 6.
+
+Model dropdown is empty
+  -> You haven't pulled any models yet: run `ollama pull llama3.1`.
+
+Response never starts streaming / spins forever
+  -> The model may still be loading into memory on first use (larger
+     models can take 10-60+ seconds the first time). Check the
+     terminal running "ollama serve" for progress logs.
+
+Port 8000 already in use
+  -> Run uvicorn with a different --port, e.g. 8001, and browse to
+     that instead.
+
+Out of memory / very slow responses
+  -> Pick a smaller model (e.g. a "7B"/"8B" variant) from the dropdown,
+     or check `ollama list` for lighter alternatives.
+
+Want to reset everything
+  -> Stop the server, delete backend/chat_history.db, restart.
+
+
+---------------------------------------------------------
+10. WHAT'S INCLUDED
+---------------------------------------------------------
+ - FastAPI backend with a clean REST API (conversations, messages,
+   models, streaming chat) — see backend/main.py.
+ - SQLite persistence for full chat history across restarts.
+ - Streaming responses token-by-token, same feel as ChatGPT.
+ - Model switcher reading live from your installed Ollama models.
+ - Per-message model tagging (each assistant reply shows which model
+   answered — handy if you switch models mid-conversation).
+ - Sidebar with conversation history, rename-on-server (auto-titled
+   from your first message), and delete.
+ - Markdown + syntax-highlighted code blocks in responses.
+ - Fully local: your prompts, replies and history never leave your
+   machine.
+
+Enjoy your own offline ChatGPT.
