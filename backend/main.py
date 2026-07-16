@@ -14,6 +14,7 @@ Run with:  uvicorn main:app --host 0.0.0.0 --port 8000
 
 import json
 import os
+import re
 
 import httpx
 from fastapi import FastAPI, HTTPException
@@ -25,6 +26,18 @@ from pydantic import BaseModel
 import database as db
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+IMAGE_MARKDOWN_RE = re.compile(r"!\[[^\]]*\]\(data:image/[^)]+\)")
+
+
+def strip_embedded_images(text: str) -> str:
+    """Replace embedded base64 image markdown with a short placeholder.
+
+    Images are sent to Ollama via the dedicated 'images' field, so we don't
+    want to also ship the (often huge) base64 string as plain text — that
+    would bloat every subsequent request in the conversation.
+    """
+    cleaned = IMAGE_MARKDOWN_RE.sub("[image attached]", text)
+    return cleaned.strip() or "[image attached]"
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend")
 
 app = FastAPI(title="Local ChatGPT")
@@ -61,6 +74,7 @@ class ChatRequest(BaseModel):
     conversation_id: str
     message: str
     model: str
+    images: list[str] | None = None  # base64-encoded image data (no data: prefix), for vision models
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +175,8 @@ async def chat(payload: ChatRequest):
     # Auto-title new conversations from the first message
     existing = db.get_messages(payload.conversation_id)
     if len([m for m in existing if m["role"] == "user"]) == 1:
-        auto_title = payload.message.strip().splitlines()[0][:48]
+        clean_message = strip_embedded_images(payload.message)
+        auto_title = clean_message.strip().splitlines()[0][:48]
         if auto_title:
             db.rename_conversation(payload.conversation_id, auto_title)
 
@@ -170,7 +185,18 @@ async def chat(payload: ChatRequest):
     ollama_messages = []
     if conv.get("system_prompt"):
         ollama_messages.append({"role": "system", "content": conv["system_prompt"]})
-    ollama_messages.extend({"role": m["role"], "content": m["content"]} for m in history)
+    ollama_messages.extend(
+        {"role": m["role"], "content": strip_embedded_images(m["content"])} for m in history
+    )
+
+    # If the user attached images to this turn, pass them to Ollama on the
+    # most recent user message (only vision-capable models use this field;
+    # others simply ignore it).
+    if payload.images:
+        for msg in reversed(ollama_messages):
+            if msg["role"] == "user":
+                msg["images"] = payload.images
+                break
 
     async def stream_and_save():
         full_reply = []

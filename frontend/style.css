@@ -23,6 +23,26 @@
   --radius: 10px;
 }
 
+/* Light mode overrides — toggled via [data-theme="light"] on <html> */
+:root[data-theme="light"] {
+  --bg:            #f7f7f5;
+  --surface:       #ffffff;
+  --surface-hover: #eef0ee;
+  --surface-raised:#ffffff;
+  --border:        #e1e3df;
+  --text:          #1c1d20;
+  --text-dim:      #5a5c64;
+  --text-faint:    #9698a1;
+  --accent:        #1a8f81;
+  --accent-dim:    #a9ded5;
+  --accent-soft:   rgba(26, 143, 129, 0.10);
+  --user-bubble:   #eef1ef;
+  --danger:        #c23b3b;
+}
+:root[data-theme="light"] body { background: var(--bg); }
+:root[data-theme="light"] .send-btn { color: #ffffff; }
+:root[data-theme="light"] ::-webkit-scrollbar-thumb { background: var(--border); }
+
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
@@ -157,6 +177,24 @@ textarea { font-family: inherit; }
   font-size: 11px;
   color: var(--text-faint);
 }
+
+.theme-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  margin-bottom: 10px;
+}
+.theme-toggle:hover { background: var(--surface-hover); color: var(--text); }
+.theme-toggle .icon-sun { display: none; }
+:root[data-theme="light"] .theme-toggle .icon-sun { display: block; }
+:root[data-theme="light"] .theme-toggle .icon-moon { display: none; }
 
 /* ---------------------------------------------------------------------
    Main
@@ -328,7 +366,7 @@ textarea { font-family: inherit; }
   overflow-x: auto;
   font-family: var(--font-mono);
   font-size: 13px;
-  margin: 10px 0;
+  margin: 0;
 }
 .msg-body code {
   font-family: var(--font-mono);
@@ -338,6 +376,103 @@ textarea { font-family: inherit; }
   border-radius: 4px;
 }
 .msg-body pre code { background: none; padding: 0; }
+
+/* Code block wrapper with a copy toolbar, injected by app.js after render */
+.code-block {
+  position: relative;
+  margin: 10px 0;
+}
+.code-block pre { margin: 0; }
+.code-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #0a0b0d;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.code-block pre {
+  border-radius: 0 0 8px 8px;
+  border-top: none;
+}
+.code-block:has(.code-toolbar) pre { border-top: none; }
+.copy-code-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 7px;
+  border-radius: 5px;
+}
+.copy-code-btn:hover { background: var(--surface-hover); color: var(--text); }
+.copy-code-btn.copied { color: var(--accent); }
+
+/* ---------------------------------------------------------------------
+   Attachments (composer)
+--------------------------------------------------------------------- */
+.attach-btn {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.attach-btn:hover { background: var(--surface-hover); color: var(--text); }
+
+.attachment-row {
+  max-width: 760px;
+  margin: 0 auto 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.attachment-row:empty { margin: 0; }
+.attachment-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  max-width: 220px;
+}
+.attachment-chip img {
+  width: 22px; height: 22px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.attachment-chip .chip-name {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.attachment-chip .chip-remove {
+  background: none; border: none; color: var(--text-faint);
+  display: flex; padding: 0;
+}
+.attachment-chip .chip-remove:hover { color: var(--danger); }
+
+/* Rendered attached images inside a sent message */
+.msg-body img.attached-image {
+  max-width: 260px;
+  max-height: 260px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  display: block;
+  margin-bottom: 8px;
+}
 .msg-body ul, .msg-body ol { padding-left: 22px; margin: 0 0 12px; }
 .msg-body a { color: var(--accent); }
 

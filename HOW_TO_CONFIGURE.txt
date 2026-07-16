@@ -205,7 +205,36 @@ Want to reset everything
 
 
 ---------------------------------------------------------
-10. WHAT'S INCLUDED
+10. NEW: COPY BUTTONS, DARK/LIGHT MODE, FILE UPLOADS
+---------------------------------------------------------
+Copy button on code blocks
+  Every code block in a response now has a small toolbar above it showing
+  the language and a "Copy" button — click it to copy that snippet to your
+  clipboard. No selecting text by hand needed.
+
+Dark / light mode
+  A toggle near the bottom of the sidebar switches between dark and light
+  themes. Your choice is remembered (stored in the browser) so it stays
+  set the next time you open the app.
+
+Attach files / images (paperclip icon in the message box)
+  - Images (png/jpg/webp/gif): shown as a small preview chip before you
+    send. On send, the image is embedded in your message (so it's saved
+    and visible in history) AND passed to Ollama as a proper image
+    attachment for models that support vision, e.g.:
+        ollama pull llama3.2-vision
+        ollama pull llava
+        ollama pull moondream
+    If your selected model doesn't support vision, it will simply ignore
+    the image data.
+  - Text/code files (.txt, .py, .js, .md, .json, .csv, etc.): the file's
+    contents are read and automatically inserted into your message as a
+    fenced code block labeled with the filename, so the model can see it
+    as context. Large files are truncated to the first ~20,000 characters.
+
+
+---------------------------------------------------------
+11. WHAT'S INCLUDED
 ---------------------------------------------------------
  - FastAPI backend with a clean REST API (conversations, messages,
    models, streaming chat) — see backend/main.py.

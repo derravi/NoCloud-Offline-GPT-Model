@@ -6,6 +6,7 @@ const state = {
   conversations: [],
   currentConvId: null,
   streaming: false,
+  attachments: [], // { name, mime, dataUrl, kind: 'image' } — images only; text files are inlined into the prompt directly
 };
 
 // ---------------------------------------------------------------------
@@ -29,6 +30,11 @@ const el = {
   composerForm: document.getElementById("composerForm"),
   promptInput: document.getElementById("promptInput"),
   sendBtn: document.getElementById("sendBtn"),
+  themeToggle: document.getElementById("themeToggle"),
+  themeToggleLabel: document.getElementById("themeToggleLabel"),
+  attachBtn: document.getElementById("attachBtn"),
+  fileInput: document.getElementById("fileInput"),
+  attachmentRow: document.getElementById("attachmentRow"),
 };
 
 marked.setOptions({ breaks: true });
@@ -56,8 +62,99 @@ async function init() {
   });
   el.promptInput.addEventListener("input", autoResize);
 
+  initTheme();
+  el.themeToggle.addEventListener("click", toggleTheme);
+
+  el.attachBtn.addEventListener("click", () => el.fileInput.click());
+  el.fileInput.addEventListener("change", onFilesSelected);
+
   await loadModels();
   await loadConversations();
+}
+
+// ---------------------------------------------------------------------
+// Theme (dark / light)
+// ---------------------------------------------------------------------
+function initTheme() {
+  const saved = localStorage.getItem("theme") || "dark";
+  applyTheme(saved);
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  el.themeToggleLabel.textContent = theme === "light" ? "Light mode" : "Dark mode";
+  localStorage.setItem("theme", theme);
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute("data-theme") || "dark";
+  applyTheme(current === "dark" ? "light" : "dark");
+}
+
+// ---------------------------------------------------------------------
+// Attachments
+// ---------------------------------------------------------------------
+const TEXT_FILE_MAX_CHARS = 20000;
+
+function onFilesSelected(e) {
+  const files = Array.from(e.target.files || []);
+  files.forEach(handleFile);
+  el.fileInput.value = ""; // allow re-selecting the same file later
+}
+
+function handleFile(file) {
+  if (file.type.startsWith("image/")) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      state.attachments.push({
+        name: file.name,
+        mime: file.type,
+        dataUrl: reader.result,
+        kind: "image",
+      });
+      renderAttachmentRow();
+    };
+    reader.readAsDataURL(file);
+  } else {
+    // Treat as a text/code file: read it and drop its contents straight into
+    // the prompt, fenced as a code block, so it becomes part of the message.
+    const reader = new FileReader();
+    reader.onload = () => {
+      let content = reader.result;
+      let truncated = false;
+      if (content.length > TEXT_FILE_MAX_CHARS) {
+        content = content.slice(0, TEXT_FILE_MAX_CHARS);
+        truncated = true;
+      }
+      const ext = (file.name.split(".").pop() || "").toLowerCase();
+      const block = `\n\nAttached file: ${file.name}${truncated ? " (truncated)" : ""}\n\`\`\`${ext}\n${content}\n\`\`\`\n`;
+      el.promptInput.value = (el.promptInput.value + block).trimStart();
+      autoResize();
+      el.promptInput.focus();
+    };
+    reader.onerror = () => alert(`Couldn't read ${file.name} as text.`);
+    reader.readAsText(file);
+  }
+}
+
+function renderAttachmentRow() {
+  el.attachmentRow.innerHTML = state.attachments
+    .map(
+      (a, i) => `<div class="attachment-chip">
+        <img src="${a.dataUrl}" alt="" />
+        <span class="chip-name">${escapeHtml(a.name)}</span>
+        <button type="button" class="chip-remove" data-idx="${i}" aria-label="Remove attachment">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>`
+    )
+    .join("");
+  el.attachmentRow.querySelectorAll(".chip-remove").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.attachments.splice(Number(btn.dataset.idx), 1);
+      renderAttachmentRow();
+    });
+  });
 }
 
 function autoResize() {
@@ -197,7 +294,8 @@ function showEmptyState() {
 async function onSubmit(e) {
   e.preventDefault();
   const text = el.promptInput.value.trim();
-  if (!text || state.streaming) return;
+  const attachments = state.attachments;
+  if ((!text && !attachments.length) || state.streaming) return;
   if (!state.currentModel) {
     alert("No model selected. Pull a model with Ollama first, e.g. `ollama pull llama3`.");
     return;
@@ -215,9 +313,18 @@ async function onSubmit(e) {
     await loadConversations();
   }
 
+  // Markdown image tags get embedded in the stored message so attachments
+  // persist across reloads; the raw base64 (no data: prefix) goes to Ollama
+  // separately for models that support vision.
+  const imageMarkdown = attachments.map((a) => `![${a.name}](${a.dataUrl})`).join("\n");
+  const fullText = [imageMarkdown, text].filter(Boolean).join("\n\n");
+  const rawImages = attachments.map((a) => a.dataUrl.split(",")[1]);
+
   el.emptyState.style.display = "none";
-  appendMessage("user", text, state.currentModel);
+  appendMessage("user", fullText, state.currentModel);
   el.promptInput.value = "";
+  state.attachments = [];
+  renderAttachmentRow();
   autoResize();
   scrollToBottom();
 
@@ -230,8 +337,9 @@ async function onSubmit(e) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         conversation_id: state.currentConvId,
-        message: text,
+        message: fullText,
         model: state.currentModel,
+        images: rawImages.length ? rawImages : undefined,
       }),
     });
 
@@ -285,19 +393,63 @@ function appendMessage(role, content, model, streaming = false) {
     <div class="msg-body ${streaming ? "streaming" : ""}"></div>
   `;
   el.messages.appendChild(wrap);
-  const body = wrap.querySelector(".msg-body");
-  if (role === "user") {
-    body.textContent = content;
-  } else {
-    renderAssistantContent(wrap, content);
-  }
+  renderAssistantContent(wrap, content);
   return wrap;
 }
 
 function renderAssistantContent(wrapEl, content) {
   const body = wrapEl.querySelector(".msg-body");
   body.innerHTML = marked.parse(content || "");
-  body.querySelectorAll("pre code").forEach((block) => hljs.highlightElement(block));
+  body.querySelectorAll("img").forEach((img) => img.classList.add("attached-image"));
+  body.querySelectorAll("pre code").forEach((block) => {
+    hljs.highlightElement(block);
+    addCopyButton(block);
+  });
+}
+
+// Wraps a highlighted <pre><code> block with a small toolbar + copy button.
+function addCopyButton(codeEl) {
+  const pre = codeEl.closest("pre");
+  if (!pre || pre.parentElement.classList.contains("code-block")) return;
+
+  const lang = (codeEl.className.match(/language-(\w+)/) || [])[1] || "text";
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "code-block";
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "code-toolbar";
+  toolbar.innerHTML = `<span>${lang}</span>
+    <button type="button" class="copy-code-btn">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+      <span class="copy-label">Copy</span>
+    </button>`;
+
+  pre.parentNode.insertBefore(wrapper, pre);
+  wrapper.appendChild(toolbar);
+  wrapper.appendChild(pre);
+
+  const btn = toolbar.querySelector(".copy-code-btn");
+  btn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(codeEl.textContent);
+    } catch {
+      // Fallback for contexts where the Clipboard API is unavailable.
+      const ta = document.createElement("textarea");
+      ta.value = codeEl.textContent;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    const label = btn.querySelector(".copy-label");
+    btn.classList.add("copied");
+    label.textContent = "Copied";
+    setTimeout(() => {
+      btn.classList.remove("copied");
+      label.textContent = "Copy";
+    }, 1500);
+  });
 }
 
 function showError(msg) {

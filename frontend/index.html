@@ -31,6 +31,11 @@
     </div>
 
     <div class="sidebar-bottom">
+      <button class="theme-toggle" id="themeToggle" type="button">
+        <svg class="icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+        <svg class="icon-sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <span id="themeToggleLabel">Dark mode</span>
+      </button>
       <div class="status-line" id="ollamaStatus">checking ollama…</div>
     </div>
   </aside>
@@ -65,13 +70,19 @@
     </section>
 
     <form class="composer" id="composerForm">
+      <div class="attachment-row" id="attachmentRow"></div>
       <div class="composer-inner">
+        <input type="file" id="fileInput" hidden multiple
+               accept="image/png,image/jpeg,image/webp,image/gif,.txt,.md,.py,.js,.ts,.jsx,.tsx,.json,.csv,.html,.css,.java,.c,.cpp,.h,.go,.rs,.rb,.php,.sql,.yaml,.yml,.log,.sh" />
+        <button type="button" class="attach-btn" id="attachBtn" aria-label="Attach file" title="Attach a file or image">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a5 5 0 01-7.07-7.07l9.19-9.19a3.5 3.5 0 014.95 4.95l-9.2 9.19a1.5 1.5 0 01-2.12-2.12l8.49-8.48"/></svg>
+        </button>
         <textarea id="promptInput" placeholder="Message your local model…" rows="1"></textarea>
         <button type="submit" class="send-btn" id="sendBtn" aria-label="Send">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
         </button>
       </div>
-      <div class="composer-hint">Enter to send · Shift+Enter for a new line</div>
+      <div class="composer-hint">Enter to send · Shift+Enter for a new line · attach images for vision models, or text/code files for context</div>
     </form>
   </main>
 </div>
