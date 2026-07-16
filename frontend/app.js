@@ -6,6 +6,7 @@ const state = {
   conversations: [],
   currentConvId: null,
   streaming: false,
+  autoScroll: true,
   attachments: [], // { name, mime, dataUrl, kind: 'image' } — images only; text files are inlined into the prompt directly
 };
 
@@ -68,8 +69,19 @@ async function init() {
   el.attachBtn.addEventListener("click", () => el.fileInput.click());
   el.fileInput.addEventListener("change", onFilesSelected);
 
+  el.chatScroll.addEventListener("scroll", onChatScroll);
+
   await loadModels();
   await loadConversations();
+}
+
+// Considered "at the bottom" within this many pixels — small buffer so
+// sub-pixel rounding doesn't fight the check.
+const SCROLL_BOTTOM_THRESHOLD = 72;
+
+function onChatScroll() {
+  const { scrollTop, scrollHeight, clientHeight } = el.chatScroll;
+  state.autoScroll = scrollHeight - scrollTop - clientHeight < SCROLL_BOTTOM_THRESHOLD;
 }
 
 // ---------------------------------------------------------------------
@@ -280,7 +292,8 @@ async function openConversation(id) {
   el.messages.innerHTML = "";
   conv.messages.forEach((m) => appendMessage(m.role, m.content, conv.model));
   renderConversationList();
-  scrollToBottom();
+  state.autoScroll = true;
+  scrollToBottom(true);
 }
 
 function showEmptyState() {
@@ -326,7 +339,8 @@ async function onSubmit(e) {
   state.attachments = [];
   renderAttachmentRow();
   autoResize();
-  scrollToBottom();
+  state.autoScroll = true;
+  scrollToBottom(true);
 
   const assistantEl = appendMessage("assistant", "", state.currentModel, true);
   setStreaming(true);
@@ -460,7 +474,8 @@ function showError(msg) {
   scrollToBottom();
 }
 
-function scrollToBottom() {
+function scrollToBottom(force = false) {
+  if (!force && !state.autoScroll) return;
   el.chatScroll.scrollTop = el.chatScroll.scrollHeight;
 }
 
