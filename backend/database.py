@@ -155,3 +155,38 @@ def get_messages(conv_id: str) -> list:
             (conv_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def delete_messages_from(conv_id: str, message_id: str) -> bool:
+    """Delete `message_id` and every message inserted after it in this
+    conversation. Used when a user edits an earlier prompt and resends it —
+    the edited message and the old replies that followed it need to go.
+    Returns False if message_id doesn't exist in this conversation.
+
+    Uses SQLite's rowid (strict insertion order) rather than the created_at
+    timestamp, since two messages can in rare cases share the same
+    wall-clock time.
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT rowid FROM messages WHERE id = ? AND conversation_id = ?",
+            (message_id, conv_id),
+        ).fetchone()
+        if not row:
+            return False
+        conn.execute(
+            "DELETE FROM messages WHERE conversation_id = ? AND rowid >= ?",
+            (conv_id, row["rowid"]),
+        )
+        conn.execute(
+            "UPDATE conversations SET updated_at = ? WHERE id = ?", (_now(), conv_id)
+        )
+        return True
+
+
+def clear_messages(conv_id: str):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM messages WHERE conversation_id = ?", (conv_id,))
+        conn.execute(
+            "UPDATE conversations SET updated_at = ? WHERE id = ?", (_now(), conv_id)
+        )

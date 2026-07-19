@@ -12,16 +12,19 @@ Run with:  uvicorn main:app --host 0.0.0.0 --port 8000
 (see README_SETUP.txt in the project root for full instructions)
 """
 
+import base64
 import json
 import os
 import re
+import secrets
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
 
 import database as db
 
@@ -48,6 +51,37 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ---------------------------------------------------------------------------
+# Optional password protection.
+#
+# Fine to leave OFF for LAN-only / mobile-on-your-WiFi use. Turn it ON
+# (set the APP_PASSWORD env var before starting the server) any time the app
+# is reachable from the open internet — e.g. behind a tunnel, reverse proxy,
+# or a public VPS — since without it, anyone with the URL can use your
+# models and read your chat history.
+# ---------------------------------------------------------------------------
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
+
+
+class BasicAuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Basic "):
+            try:
+                _, password = base64.b64decode(auth[6:]).decode().split(":", 1)
+            except Exception:
+                password = ""
+            if secrets.compare_digest(password, APP_PASSWORD):
+                return await call_next(request)
+        return Response(
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="Local ChatGPT"'},
+        )
+
+
+if APP_PASSWORD:
+    app.add_middleware(BasicAuthMiddleware)
 
 db.init_db()
 
@@ -159,6 +193,29 @@ def delete_conversation(conv_id: str):
     return {"ok": True}
 
 
+@app.delete("/api/conversations/{conv_id}/messages")
+def clear_messages(conv_id: str):
+    """Delete every message in a conversation, keeping the conversation itself."""
+    if not db.get_conversation(conv_id):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    db.clear_messages(conv_id)
+    return {"ok": True}
+
+
+@app.delete("/api/conversations/{conv_id}/messages/from/{message_id}")
+def delete_messages_from(conv_id: str, message_id: str):
+    """Delete a message and everything sent after it in the conversation.
+
+    Used when editing an earlier prompt: the edited message and the replies
+    that followed it are removed so the edited text can be resent cleanly.
+    """
+    if not db.get_conversation(conv_id):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if not db.delete_messages_from(conv_id, message_id):
+        raise HTTPException(status_code=404, detail="Message not found")
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------------------
 # Chat (streaming)
 # ---------------------------------------------------------------------------
@@ -170,7 +227,7 @@ async def chat(payload: ChatRequest):
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     # Save the user's message right away
-    db.add_message(payload.conversation_id, "user", payload.message)
+    user_msg = db.add_message(payload.conversation_id, "user", payload.message)
 
     # Auto-title new conversations from the first message
     existing = db.get_messages(payload.conversation_id)
@@ -200,6 +257,7 @@ async def chat(payload: ChatRequest):
 
     async def stream_and_save():
         full_reply = []
+        yield json.dumps({"user_message_id": user_msg["id"]}) + "\n"
         try:
             async with httpx.AsyncClient(timeout=None) as client:
                 async with client.stream(
@@ -245,3 +303,16 @@ async def chat(payload: ChatRequest):
 # ---------------------------------------------------------------------------
 
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+
+
+if __name__ == "__main__":
+    # Lets you run `python main.py` directly (handy for hosting platforms
+    # like Render/Railway that set PORT for you) in addition to the usual
+    # `uvicorn main:app --host 0.0.0.0 --port 8000`.
+    import uvicorn
+
+    uvicorn.run(
+        app,
+        host=os.environ.get("HOST", "0.0.0.0"),
+        port=int(os.environ.get("PORT", 8000)),
+    )
