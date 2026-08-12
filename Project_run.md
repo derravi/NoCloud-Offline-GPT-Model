@@ -6,4 +6,4 @@
 
 (4) open the terminal go inside the "backend" folder
 
-(5) run the Apis using the below :- uvicorn main:app --host 0.0.0.0 --port 8000
+(5) run the Apis using this  :- uvicorn main:app --port 8000
